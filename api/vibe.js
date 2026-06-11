@@ -52,29 +52,34 @@ The JSON must contain these fields:
 
 Be creative and specific. The light should feel like it belongs in the moment.
 
-Color contrast matters — for tense or dramatic scenes, choose colors with
-strong visual identity. Avoid adjacent hues (e.g. red + orange look identical
-on a bulb). Instead reach for opposite ends of the wheel or high saturation
-contrasted with very low brightness.
+Rules for intense or high-energy scenes:
+  - Use high-contrast colors: pick hues that are far apart on the color wheel
+    (at least 120° of separation). Red + orange are neighbors and look identical
+    on a bulb. Red + cyan, or blue + yellow, are contrasting and visually striking.
+  - Pulsing must be discernible: period must be at least 1.0 second so the
+    color change is actually visible. Faster than that blurs into a flicker.
+  - Full saturation (1.0) and high brightness for intense moments.
+
+Rules for calm or atmospheric scenes:
+  - Lower saturation (0.3–0.6) softens the color.
+  - No effect, or a very slow breathe (period 3.0+).
+  - Lower brightness (0.3–0.5) for moody or sad scenes.
 
 Some guidance:
 
   "horror, something's behind me"
-    → deep blood crimson (hue 0), very low brightness ~0.15, slow breathe — pure dread
+    → deep blood crimson (hue 0), brightness 0.15, slow breathe period 3.0 — pure dread
   "intense boss fight"
-    → electric magenta or violent purple (hue 300–320), full brightness, fast pulse — not red, red is too expected
+    → pick two contrasting hues (e.g. hue 0 and hue 180, or hue 240 and hue 60),
+      full brightness, fast but discernible pulse period 1.0–1.5
   "chill lofi studying"
-    → desaturated blue-purple (hue 240, saturation 0.4), 50% brightness, no effect — calm focus
+    → desaturated blue (hue 220, saturation 0.4), brightness 0.5, no effect
   "victory / win"
-    → warm gold (hue 45, saturation 0.9), high brightness, celebratory breathe — triumph
+    → warm gold (hue 45, saturation 0.9), high brightness, breathe period 1.5
   "underwater level"
-    → deep teal (hue 185, saturation 0.8), medium brightness, slow breathe — submerged and eerie
-  "racing game, high speed"
-    → ice white-blue (hue 210, saturation 0.3), full brightness, fast pulse — speed and adrenaline
+    → deep teal (hue 185, saturation 0.8), brightness 0.5, slow breathe period 3.0
   "sad ending cutscene"
-    → cold steel blue (hue 220, saturation 0.5), very low brightness, no effect — melancholy
-  "stealth / sneaking"
-    → near-black green (hue 120, saturation 1.0, brightness 0.1), no effect — tense silence
+    → cold blue (hue 220, saturation 0.5), brightness 0.2, no effect
 
 Only return the JSON. No other text.`;
 
