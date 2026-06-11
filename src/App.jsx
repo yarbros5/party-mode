@@ -18,10 +18,33 @@ import BrightnessSlider from './components/BrightnessSlider';
 import ColorPicker from './components/ColorPicker';
 import SceneButtons from './components/SceneButtons';
 import FadeSpeedSlider from './components/FadeSpeedSlider';
+import RaveColorEditor from './components/RaveColorEditor';
 import StatusIndicator from './components/StatusIndicator';
 import { PRESETS } from './scenes/presets';
 import * as lifx from './services/lifxService';
 import './App.css';
+
+// Converts a LIFX hue (0–360) to a hex color string for display in color inputs.
+// Saturation and brightness are fixed at 1 since we just need a representative color.
+function lifxHueToHex(hue) {
+  const h = hue / 360;
+  const s = 1, v = 1;
+  const i = Math.floor(h * 6);
+  const f = h * 6 - i;
+  const p = v * (1 - s);
+  const q = v * (1 - f * s);
+  const t = v * (1 - (1 - f) * s);
+  let r, g, b;
+  switch (i % 6) {
+    case 0: r = v; g = t; b = p; break;
+    case 1: r = q; g = v; b = p; break;
+    case 2: r = p; g = v; b = t; break;
+    case 3: r = p; g = q; b = v; break;
+    case 4: r = t; g = p; b = v; break;
+    case 5: r = v; g = p; b = q; break;
+  }
+  return '#' + [r, g, b].map(x => Math.round(x * 255).toString(16).padStart(2, '0')).join('');
+}
 
 // Converts a hex color string (e.g. '#ff6600') to LIFX hue/saturation values.
 // LIFX uses hue 0–360 and saturation 0–1, not hex.
@@ -56,6 +79,11 @@ export default function App() {
   const [color, setColor] = useState('#7c3aed');       // hex for the color picker
   const [activeScene, setActiveScene] = useState(null);
   const [fadeSpeed, setFadeSpeed] = useState(1.5);     // seconds per color in rave mode
+  // Rave colors stored as hex strings so the color editor can work with them directly.
+  // Initialized by converting the hue values from the preset.
+  const [raveColors, setRaveColors] = useState(
+    () => PRESETS.rave.colors.map(c => lifxHueToHex(c.hue))
+  );
 
   // ── Request state ─────────────────────────────────────────────────────────
   const [status, setStatus] = useState('loading');
@@ -96,17 +124,18 @@ export default function App() {
   }
 
   // Starts the rave color loop at the given speed (seconds per color).
-  function startRave(speed) {
+  // hexColors is an array of hex strings; we convert each to LIFX format here.
+  function startRave(speed, hexColors) {
     stopRave(); // Clear any existing loop first.
     raveColorIndexRef.current = 0;
-    const colors = PRESETS.rave.colors;
+    const lifxColors = hexColors.map(hex => hexToLifxColor(hex));
 
     // Fire the first color immediately so there's no delay on activation.
-    lifx.setColor(colors[0], speed).catch(() => {});
+    lifx.setColor(lifxColors[0], speed).catch(() => {});
 
     raveIntervalRef.current = setInterval(() => {
-      raveColorIndexRef.current = (raveColorIndexRef.current + 1) % colors.length;
-      const nextColor = colors[raveColorIndexRef.current];
+      raveColorIndexRef.current = (raveColorIndexRef.current + 1) % lifxColors.length;
+      const nextColor = lifxColors[raveColorIndexRef.current];
       // Duration matches the interval so each fade fills exactly one step.
       lifx.setColor(nextColor, speed).catch(() => {});
     }, speed * 1000);
@@ -165,7 +194,7 @@ export default function App() {
     setIsOn(true);
 
     if (key === 'rave') {
-      startRave(fadeSpeed);
+      startRave(fadeSpeed, raveColors);
     } else {
       stopRave();
       const preset = PRESETS[key];
@@ -183,7 +212,16 @@ export default function App() {
   function handleFadeSpeedCommit(speed) {
     setFadeSpeed(speed);
     if (activeScene === 'rave') {
-      startRave(speed);
+      startRave(speed, raveColors);
+    }
+  }
+
+  // Called when the user adds, removes, or changes a rave color.
+  // Restarts the loop immediately so the new palette takes effect.
+  function handleRaveColorsChange(newColors) {
+    setRaveColors(newColors);
+    if (activeScene === 'rave') {
+      startRave(fadeSpeed, newColors);
     }
   }
 
@@ -224,13 +262,19 @@ export default function App() {
             onScene={handleScene}
             disabled={isBusy}
           />
-          {/* Fade speed slider only appears when Rave is active */}
+          {/* Fade speed and color editor only appear when Rave is active */}
           {activeScene === 'rave' && (
-            <FadeSpeedSlider
-              fadeSpeed={fadeSpeed}
-              onFadeSpeed={handleFadeSpeedChange}
-              onFadeSpeedCommit={handleFadeSpeedCommit}
-            />
+            <>
+              <FadeSpeedSlider
+                fadeSpeed={fadeSpeed}
+                onFadeSpeed={handleFadeSpeedChange}
+                onFadeSpeedCommit={handleFadeSpeedCommit}
+              />
+              <RaveColorEditor
+                colors={raveColors}
+                onColorsChange={handleRaveColorsChange}
+              />
+            </>
           )}
         </section>
       </main>
