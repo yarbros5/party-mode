@@ -1,15 +1,13 @@
 /**
  * App.jsx — Root Component
  *
- * This is the top-level component. It owns all shared state and coordinates
- * between the UI components and the LIFX service layer.
+ * Owns all shared state and coordinates between UI components,
+ * input streams, and the LIFX service layer.
  *
- * Data flow:
- *   User interaction → component callback → App state update → lifxService call
- *
- * FUTURE (Sprint 2/3): The audio engine and Claude AI layer will also call
- *   lifxService from outside this component. App state will be updated via
- *   a shared context or event emitter so the UI reflects AI-driven changes.
+ * Data flows:
+ *   Manual controls  → lifxService directly
+ *   Typed vibe       → /api/vibe (Claude) → lifxService via color loop
+ *   Party Mode       → audioInput + screenInput → /api/vibe (Claude) → color loop
  */
 
 import { useState, useEffect, useCallback, useRef } from 'react';
@@ -21,9 +19,14 @@ import FadeSpeedSlider from './components/FadeSpeedSlider';
 import RaveColorEditor from './components/RaveColorEditor';
 import VibeInput from './components/VibeInput';
 import VibeHistory from './components/VibeHistory';
+import PartyModeToggle from './components/PartyModeToggle';
+import AudioVisualizer from './components/AudioVisualizer';
+import ScreenSwatches from './components/ScreenSwatches';
 import StatusIndicator from './components/StatusIndicator';
 import { PRESETS } from './scenes/presets';
 import * as lifx from './services/lifxService';
+import { createAudioAnalyser } from './inputs/audioInput';
+import { createScreenSampler } from './inputs/screenInput';
 import './App.css';
 
 // Converts a LIFX hue (0–360) to a hex color string for display in color inputs.
@@ -96,6 +99,14 @@ export default function App() {
   const [isVibeLoading, setIsVibeLoading] = useState(false);
   const [vibeHistory, setVibeHistory] = useState([]); // Most recent first, max 5.
   const [vibeDescription, setVibeDescription] = useState(''); // What Claude is doing.
+
+  // ── Party mode state ──────────────────────────────────────────────────────
+  const [partyModeOn, setPartyModeOn] = useState(false);
+  const [partyModeLoading, setPartyModeLoading] = useState(false);
+  const [screenColors, setScreenColors] = useState(null); // Current dominant screen colors.
+  const audioAnalyserRef = useRef(null);   // createAudioAnalyser() instance
+  const screenSamplerRef = useRef(null);   // createScreenSampler() instance
+  const partyActiveRef = useRef(false);    // Flag to stop the async party loop
 
   // LIFX cloud API allows 120 requests/minute = one every 500ms.
   const LIFX_MIN_STEP_MS = 500;
@@ -209,6 +220,7 @@ export default function App() {
     setActiveScene(null);
     stopRave();
     stopVibeLoop();
+    stopPartyMode();
     send(() => lifx.setPower(next));
   }
 
@@ -258,6 +270,122 @@ export default function App() {
     setFadeSpeed(speed);
     if (activeScene === 'rave') {
       startRave(speed, raveColors);
+    }
+  }
+
+  // ── Party mode ────────────────────────────────────────────────────────────
+
+  // Cleans up all party mode resources.
+  function stopPartyMode() {
+    partyActiveRef.current = false;
+    setPartyModeOn(false);
+    if (audioAnalyserRef.current) {
+      audioAnalyserRef.current.destroy();
+      audioAnalyserRef.current = null;
+    }
+    if (screenSamplerRef.current) {
+      screenSamplerRef.current.destroy();
+      screenSamplerRef.current = null;
+    }
+    setScreenColors(null);
+    stopVibeLoop();
+  }
+
+  // Requests screen+audio access, then starts the continuous update loop.
+  async function startPartyMode() {
+    setPartyModeLoading(true);
+    stopRave();
+    stopVibeLoop();
+
+    let stream;
+    try {
+      // One getDisplayMedia call gives us both the video (screen) and audio tracks.
+      stream = await navigator.mediaDevices.getDisplayMedia({
+        video: { frameRate: 2 }, // 2fps is plenty for color sampling
+        audio: true,
+      });
+    } catch (err) {
+      // User cancelled the picker or permission was denied.
+      setPartyModeLoading(false);
+      setStatus('error');
+      setStatusMessage(err.message || 'Screen access denied');
+      return;
+    }
+
+    // If the user clicks "Stop sharing" in the browser bar, stop party mode.
+    stream.getVideoTracks()[0]?.addEventListener('ended', stopPartyMode);
+
+    // Set up the audio analyser if an audio track was captured.
+    // (macOS native apps won't have audio — that's OK, we handle null below.)
+    const audioTracks = stream.getAudioTracks();
+    if (audioTracks.length > 0) {
+      const audioStream = new MediaStream([audioTracks[0]]);
+      audioAnalyserRef.current = createAudioAnalyser(audioStream);
+    }
+
+    // Set up the screen color sampler from the video track.
+    const videoStream = new MediaStream([stream.getVideoTracks()[0]]);
+    screenSamplerRef.current = createScreenSampler(videoStream);
+
+    partyActiveRef.current = true;
+    setPartyModeOn(true);
+    setPartyModeLoading(false);
+
+    // Start the completion-triggered loop.
+    runPartyLoop();
+  }
+
+  // Samples audio + screen, sends to Claude, applies result.
+  // Completion-triggered: each iteration only starts after the previous finishes,
+  // so Claude response time naturally throttles the loop. No overlapping requests.
+  async function runPartyLoop() {
+    if (!partyActiveRef.current) return;
+
+    // Sample both streams.
+    const audio = audioAnalyserRef.current
+      ? audioAnalyserRef.current.sample()
+      : { energy: 0, bass: 0, mid: 0, treble: 0 };
+
+    const colors = screenSamplerRef.current
+      ? screenSamplerRef.current.sample()
+      : ['#000000', '#000000', '#000000'];
+
+    // Update the screen swatches in the UI.
+    setScreenColors(colors);
+
+    try {
+      const response = await fetch('/api/vibe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          audio,
+          screen: { dominant_colors: colors },
+        }),
+      });
+
+      const data = await response.json();
+      if (response.ok) {
+        if (data.colors?.length > 1) {
+          startVibeLoop(data.colors, data.stepDuration, data.order || 'sequence');
+        }
+        setVibeDescription(data.description || '');
+        setStatus('connected');
+      }
+    } catch {
+      // Silently skip failed iterations — party mode keeps trying.
+    }
+
+    // Only continue if party mode is still on.
+    if (partyActiveRef.current) {
+      runPartyLoop();
+    }
+  }
+
+  function handlePartyToggle() {
+    if (partyModeOn) {
+      stopPartyMode();
+    } else {
+      startPartyMode();
     }
   }
 
@@ -324,7 +452,29 @@ export default function App() {
       </header>
 
       <main className="controls">
-        {/* ── AI Vibe Layer ── */}
+
+        {/* ── Party Mode — the main feature ── */}
+        <section className="card">
+          <PartyModeToggle
+            isOn={partyModeOn}
+            onToggle={handlePartyToggle}
+            isLoading={partyModeLoading}
+          />
+          {partyModeOn && (
+            <div style={{ marginTop: '16px', display: 'flex', flexDirection: 'column', gap: '16px' }}>
+              <AudioVisualizer analyser={audioAnalyserRef.current} />
+              <ScreenSwatches colors={screenColors} />
+              {vibeDescription && (
+                <div style={{ color: '#a78bfa', fontSize: '13px', fontStyle: 'italic' }}>
+                  ✦ {vibeDescription}
+                </div>
+              )}
+            </div>
+          )}
+        </section>
+
+        {/* ── Typed Vibe (manual AI) ── */}
+        {!partyModeOn && (
         <section className="card">
           <VibeInput onVibe={handleVibe} isLoading={isVibeLoading} description={vibeDescription} />
           <VibeHistory
@@ -333,6 +483,7 @@ export default function App() {
             isLoading={isVibeLoading}
           />
         </section>
+        )}
 
         {/* ── Manual Controls ── */}
         <section className="card">
