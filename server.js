@@ -110,8 +110,8 @@ app.post('/api/vibe', async (req, res) => {
         body: JSON.stringify({
           color: colorString,
           period: effect.period,
-          ...(effect.cycles !== undefined && { cycles: effect.cycles }),
           power_on: true,
+          persist: true,
         }),
       });
     } else {

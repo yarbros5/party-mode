@@ -104,9 +104,10 @@ async function setLifxEffect(params) {
       body: JSON.stringify({
         color: buildColorString({ hue, saturation, brightness, kelvin }),
         period: effect.period,
-        // Only include cycles if specified; omitting it means infinite.
-        ...(effect.cycles !== undefined && { cycles: effect.cycles }),
         power_on: true,
+        // persist: true keeps the last effect color when the effect ends,
+        // instead of snapping back to the previous state (usually bright white).
+        persist: true,
       }),
     }
   );
