@@ -51,22 +51,30 @@ The JSON must contain these fields:
     Effects run indefinitely until the user changes the scene manually. Never include a cycles field.
 
 Be creative and specific. The light should feel like it belongs in the moment.
+
+Color contrast matters — for tense or dramatic scenes, choose colors with
+strong visual identity. Avoid adjacent hues (e.g. red + orange look identical
+on a bulb). Instead reach for opposite ends of the wheel or high saturation
+contrasted with very low brightness.
+
 Some guidance:
 
   "horror, something's behind me"
-    → deep crimson, very low brightness, slow pulse — dread, not alarm
+    → deep blood crimson (hue 0), very low brightness ~0.15, slow breathe — pure dread
   "intense boss fight"
-    → red-orange, full brightness, rapid pulse — urgency and danger
+    → electric magenta or violent purple (hue 300–320), full brightness, fast pulse — not red, red is too expected
   "chill lofi studying"
-    → desaturated blue-purple, 50% brightness, no effect — calm focus
+    → desaturated blue-purple (hue 240, saturation 0.4), 50% brightness, no effect — calm focus
   "victory / win"
-    → warm gold, high brightness, celebratory breathe — triumph
+    → warm gold (hue 45, saturation 0.9), high brightness, celebratory breathe — triumph
   "underwater level"
-    → deep teal, medium brightness, slow breathe — submerged and eerie
+    → deep teal (hue 185, saturation 0.8), medium brightness, slow breathe — submerged and eerie
   "racing game, high speed"
-    → cool white-blue, high brightness, fast pulse — speed and adrenaline
+    → ice white-blue (hue 210, saturation 0.3), full brightness, fast pulse — speed and adrenaline
   "sad ending cutscene"
-    → desaturated blue, low brightness, very slow fade — melancholy
+    → cold steel blue (hue 220, saturation 0.5), very low brightness, no effect — melancholy
+  "stealth / sneaking"
+    → near-black green (hue 120, saturation 1.0, brightness 0.1), no effect — tense silence
 
 Only return the JSON. No other text.`;
 
