@@ -19,6 +19,8 @@ import ColorPicker from './components/ColorPicker';
 import SceneButtons from './components/SceneButtons';
 import FadeSpeedSlider from './components/FadeSpeedSlider';
 import RaveColorEditor from './components/RaveColorEditor';
+import VibeInput from './components/VibeInput';
+import VibeHistory from './components/VibeHistory';
 import StatusIndicator from './components/StatusIndicator';
 import { PRESETS } from './scenes/presets';
 import * as lifx from './services/lifxService';
@@ -89,6 +91,10 @@ export default function App() {
   const [status, setStatus] = useState('loading');
   const [statusMessage, setStatusMessage] = useState('');
   const [isBusy, setIsBusy] = useState(false);
+
+  // ── Vibe state ────────────────────────────────────────────────────────────
+  const [isVibeLoading, setIsVibeLoading] = useState(false);
+  const [vibeHistory, setVibeHistory] = useState([]); // Most recent first, max 5.
 
   // ── Rave loop refs ────────────────────────────────────────────────────────
   // We use a ref (not state) for the interval ID because changing it should
@@ -216,6 +222,43 @@ export default function App() {
     }
   }
 
+  // Sends a vibe string to the /api/vibe endpoint and updates UI state.
+  async function handleVibe(vibe) {
+    setIsVibeLoading(true);
+    setActiveScene(null);
+    stopRave();
+    setStatusMessage('');
+
+    try {
+      const response = await fetch('/api/vibe', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ vibe }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error || 'Vibe request failed');
+      }
+
+      // Sync brightness slider to what Claude chose (convert 0–1 to 0–100).
+      setBrightness(Math.round(data.brightness * 100));
+      setStatus('connected');
+
+      // Add to history, keeping only the last 5, avoiding duplicates.
+      setVibeHistory(prev => {
+        const filtered = prev.filter(v => v !== vibe);
+        return [vibe, ...filtered].slice(0, 5);
+      });
+    } catch (err) {
+      setStatus('error');
+      setStatusMessage(err.message);
+    } finally {
+      setIsVibeLoading(false);
+    }
+  }
+
   // Called when the user adds, removes, or changes a rave color.
   // Restarts the loop immediately so the new palette takes effect.
   function handleRaveColorsChange(newColors) {
@@ -238,6 +281,17 @@ export default function App() {
       </header>
 
       <main className="controls">
+        {/* ── AI Vibe Layer ── */}
+        <section className="card">
+          <VibeInput onVibe={handleVibe} isLoading={isVibeLoading} />
+          <VibeHistory
+            history={vibeHistory}
+            onVibe={handleVibe}
+            isLoading={isVibeLoading}
+          />
+        </section>
+
+        {/* ── Manual Controls ── */}
         <section className="card">
           <PowerToggle isOn={isOn} onToggle={handlePowerToggle} disabled={isBusy} />
         </section>
