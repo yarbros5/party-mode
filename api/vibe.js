@@ -140,7 +140,8 @@ export default async function handler(req, res) {
       messages: [{ role: 'user', content: vibe.trim() }],
     });
 
-    const rawJson = message.content[0].text.trim();
+    // Strip markdown code fences if Claude wrapped the JSON in ```json ... ```
+    const rawJson = message.content[0].text.trim().replace(/^```[a-z]*\n?/i, '').replace(/```$/,'').trim();
     lightingParams = JSON.parse(rawJson);
   } catch (err) {
     console.error('Claude error:', err.message || err);
