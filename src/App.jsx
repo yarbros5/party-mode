@@ -12,11 +12,12 @@
  *   a shared context or event emitter so the UI reflects AI-driven changes.
  */
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import PowerToggle from './components/PowerToggle';
 import BrightnessSlider from './components/BrightnessSlider';
 import ColorPicker from './components/ColorPicker';
 import SceneButtons from './components/SceneButtons';
+import FadeSpeedSlider from './components/FadeSpeedSlider';
 import StatusIndicator from './components/StatusIndicator';
 import { PRESETS } from './scenes/presets';
 import * as lifx from './services/lifxService';
@@ -54,15 +55,24 @@ export default function App() {
   const [brightness, setBrightness] = useState(80);   // 0–100 for display
   const [color, setColor] = useState('#7c3aed');       // hex for the color picker
   const [activeScene, setActiveScene] = useState(null);
+  const [fadeSpeed, setFadeSpeed] = useState(1.5);     // seconds per color in rave mode
 
   // ── Request state ─────────────────────────────────────────────────────────
   const [status, setStatus] = useState('loading');
   const [statusMessage, setStatusMessage] = useState('');
-  const [isBusy, setIsBusy] = useState(false);  // true while any LIFX call is in flight
+  const [isBusy, setIsBusy] = useState(false);
+
+  // ── Rave loop refs ────────────────────────────────────────────────────────
+  // We use a ref (not state) for the interval ID because changing it should
+  // never trigger a re-render — it's internal bookkeeping, not UI data.
+  const raveIntervalRef = useRef(null);
+  const raveColorIndexRef = useRef(0);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
   // Wraps any lifxService call: sets busy flag, catches errors, updates status.
+  // Note: rave loop calls lifx.setColor directly (not through send) so it
+  // doesn't flip the busy flag on every color change.
   const send = useCallback(async (lifxCall) => {
     setIsBusy(true);
     setStatusMessage('');
@@ -75,6 +85,36 @@ export default function App() {
     } finally {
       setIsBusy(false);
     }
+  }, []);
+
+  // Stops the rave color loop if it's running.
+  function stopRave() {
+    if (raveIntervalRef.current) {
+      clearInterval(raveIntervalRef.current);
+      raveIntervalRef.current = null;
+    }
+  }
+
+  // Starts the rave color loop at the given speed (seconds per color).
+  function startRave(speed) {
+    stopRave(); // Clear any existing loop first.
+    raveColorIndexRef.current = 0;
+    const colors = PRESETS.rave.colors;
+
+    // Fire the first color immediately so there's no delay on activation.
+    lifx.setColor(colors[0], speed).catch(() => {});
+
+    raveIntervalRef.current = setInterval(() => {
+      raveColorIndexRef.current = (raveColorIndexRef.current + 1) % colors.length;
+      const nextColor = colors[raveColorIndexRef.current];
+      // Duration matches the interval so each fade fills exactly one step.
+      lifx.setColor(nextColor, speed).catch(() => {});
+    }, speed * 1000);
+  }
+
+  // Stop the rave loop when the component unmounts (e.g. tab closed).
+  useEffect(() => {
+    return () => stopRave();
   }, []);
 
   // ── Check connection on first load ────────────────────────────────────────
@@ -97,6 +137,7 @@ export default function App() {
     const next = !isOn;
     setIsOn(next);
     setActiveScene(null);
+    stopRave();
     send(() => lifx.setPower(next));
   }
 
@@ -104,6 +145,7 @@ export default function App() {
   function handleBrightnessChange(value) {
     setBrightness(value);
     setActiveScene(null);
+    stopRave();
   }
 
   // Only send to LIFX when the user finishes dragging (mouse/touch released).
@@ -114,16 +156,35 @@ export default function App() {
   function handleColor(hex) {
     setColor(hex);
     setActiveScene(null);
+    stopRave();
     send(() => lifx.setColor(hexToLifxColor(hex)));
   }
 
   function handleScene(key) {
-    const preset = PRESETS[key];
     setActiveScene(key);
     setIsOn(true);
-    // Sync brightness display to the preset value (convert 0–1 back to 0–100).
-    setBrightness(Math.round(preset.color.brightness * 100));
-    send(() => lifx.applyScene(preset));
+
+    if (key === 'rave') {
+      startRave(fadeSpeed);
+    } else {
+      stopRave();
+      const preset = PRESETS[key];
+      setBrightness(Math.round(preset.color.brightness * 100));
+      send(() => lifx.applyScene(preset));
+    }
+  }
+
+  // Called while dragging the fade speed slider — update display only.
+  function handleFadeSpeedChange(speed) {
+    setFadeSpeed(speed);
+  }
+
+  // Called when the user releases the fade speed slider — restart rave loop.
+  function handleFadeSpeedCommit(speed) {
+    setFadeSpeed(speed);
+    if (activeScene === 'rave') {
+      startRave(speed);
+    }
   }
 
   // ── Render ────────────────────────────────────────────────────────────────
@@ -163,6 +224,14 @@ export default function App() {
             onScene={handleScene}
             disabled={isBusy}
           />
+          {/* Fade speed slider only appears when Rave is active */}
+          {activeScene === 'rave' && (
+            <FadeSpeedSlider
+              fadeSpeed={fadeSpeed}
+              onFadeSpeed={handleFadeSpeedChange}
+              onFadeSpeedCommit={handleFadeSpeedCommit}
+            />
+          )}
         </section>
       </main>
 

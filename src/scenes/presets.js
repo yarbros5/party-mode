@@ -19,13 +19,18 @@ export const PRESETS = {
   rave: {
     label: 'Rave',
     emoji: '🎉',
-    color: {
-      hue: 280,        // Purple
-      saturation: 1.0,
-      brightness: 1.0,
-      kelvin: 3500,
-    },
-    duration: 0.3,     // Fast snap for energy
+    // Rave cycles through these colors in order, fading between each one.
+    // Add, remove, or reorder colors here to change the rave palette.
+    colors: [
+      { hue: 0,   saturation: 1.0, brightness: 1.0, kelvin: 3500 }, // Red
+      { hue: 30,  saturation: 1.0, brightness: 1.0, kelvin: 3500 }, // Orange
+      { hue: 60,  saturation: 1.0, brightness: 1.0, kelvin: 3500 }, // Yellow
+      { hue: 120, saturation: 1.0, brightness: 1.0, kelvin: 3500 }, // Green
+      { hue: 180, saturation: 1.0, brightness: 1.0, kelvin: 3500 }, // Cyan
+      { hue: 240, saturation: 1.0, brightness: 1.0, kelvin: 3500 }, // Blue
+      { hue: 280, saturation: 1.0, brightness: 1.0, kelvin: 3500 }, // Purple
+      { hue: 320, saturation: 1.0, brightness: 1.0, kelvin: 3500 }, // Pink
+    ],
   },
 
   chill: {
