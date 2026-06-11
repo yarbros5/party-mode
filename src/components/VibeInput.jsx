@@ -10,13 +10,20 @@
  *   isLoading - boolean, true while waiting for Claude to respond
  */
 
+import { useState } from 'react';
+
 export default function VibeInput({ onVibe, isLoading }) {
+  const [value, setValue] = useState('');
+
   function handleSubmit(e) {
     e.preventDefault();
-    const input = e.target.elements.vibe;
-    const value = input.value.trim();
-    if (!value) return;
-    onVibe(value);
+    const trimmed = value.trim();
+    if (!trimmed) return;
+    onVibe(trimmed);
+  }
+
+  function handleClear() {
+    setValue('');
   }
 
   return (
@@ -27,15 +34,30 @@ export default function VibeInput({ onVibe, isLoading }) {
       </div>
 
       <form onSubmit={handleSubmit} style={styles.form}>
-        <input
-          name="vibe"
-          type="text"
-          placeholder='e.g. "intense boss fight" or "chill lofi rain"'
-          disabled={isLoading}
-          style={styles.input}
-          autoComplete="off"
-        />
-        <button type="submit" disabled={isLoading} style={styles.button}>
+        <div style={styles.inputWrapper}>
+          <input
+            type="text"
+            value={value}
+            onChange={(e) => setValue(e.target.value)}
+            placeholder='e.g. "intense boss fight" or "chill lofi rain"'
+            disabled={isLoading}
+            spellCheck={true}
+            autoComplete="off"
+            style={styles.input}
+          />
+          {/* Clear button — only visible when there's text */}
+          {value.length > 0 && (
+            <button
+              type="button"
+              onClick={handleClear}
+              style={styles.clearButton}
+              tabIndex={-1}
+            >
+              ×
+            </button>
+          )}
+        </div>
+        <button type="submit" disabled={isLoading} style={styles.submitButton}>
           {isLoading ? '...' : '→'}
         </button>
       </form>
@@ -67,17 +89,35 @@ const styles = {
     display: 'flex',
     gap: '8px',
   },
-  input: {
+  inputWrapper: {
     flex: 1,
+    position: 'relative',
+    display: 'flex',
+    alignItems: 'center',
+  },
+  input: {
+    width: '100%',
     background: 'rgba(255,255,255,0.07)',
     border: '1px solid rgba(255,255,255,0.12)',
     borderRadius: '10px',
-    padding: '12px 14px',
+    // Extra right padding so text doesn't run under the clear button.
+    padding: '12px 36px 12px 14px',
     color: '#e2e8f0',
     fontSize: '14px',
     outline: 'none',
   },
-  button: {
+  clearButton: {
+    position: 'absolute',
+    right: '10px',
+    background: 'none',
+    border: 'none',
+    color: '#64748b',
+    fontSize: '18px',
+    cursor: 'pointer',
+    lineHeight: 1,
+    padding: '0 2px',
+  },
+  submitButton: {
     background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
     border: 'none',
     borderRadius: '10px',
@@ -86,7 +126,6 @@ const styles = {
     width: '48px',
     cursor: 'pointer',
     flexShrink: 0,
-    opacity: 1,
     transition: 'opacity 0.2s',
   },
 };

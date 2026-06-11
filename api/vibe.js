@@ -43,9 +43,9 @@ The JSON must contain these fields:
   effect      - (optional) object, only include when movement enhances the vibe:
     {
       "type":    "pulse" | "breathe",
-      "period":  float seconds per cycle (0.5–4.0),
-      "cycles":  integer (3–15), omit for infinite
+      "period":  float seconds per cycle (0.5–4.0)
     }
+    Effects run indefinitely until the user changes the scene manually. Never include a cycles field.
 
 Be creative and specific. The light should feel like it belongs in the moment.
 Some guidance:
