@@ -45,8 +45,13 @@ The JSON must contain these fields:
                 Max 8 words. No punctuation.
   effect      - (optional) object, only include when movement enhances the vibe:
     {
-      "type":    "pulse" | "breathe",
-      "period":  float seconds per cycle (0.5–4.0)
+      "type":       "pulse" | "breathe",
+      "period":     float seconds per cycle — minimum 1.0 for intense scenes,
+                    3.0+ for calm scenes,
+      "from_color": (optional) object with hue/saturation/brightness/kelvin —
+                    the second color the effect alternates with. Use this for
+                    high-contrast two-color flashing. If omitted, LIFX uses
+                    the bulb's previous state as the second color.
     }
     Effects run indefinitely until the user changes the scene manually. Never include a cycles field.
 
@@ -70,8 +75,9 @@ Some guidance:
   "horror, something's behind me"
     → deep blood crimson (hue 0), brightness 0.15, slow breathe period 3.0 — pure dread
   "intense boss fight"
-    → pick two contrasting hues (e.g. hue 0 and hue 180, or hue 240 and hue 60),
-      full brightness, fast but discernible pulse period 1.0–1.5
+    → use effect with from_color to flash between two contrasting hues
+      (e.g. color hue 0 red ↔ from_color hue 180 cyan, or hue 240 blue ↔ hue 60 yellow),
+      full brightness on both, pulse period 1.0–1.5
   "chill lofi studying"
     → desaturated blue (hue 220, saturation 0.4), brightness 0.5, no effect
   "victory / win"
@@ -119,6 +125,9 @@ async function setLifxEffect(params) {
       },
       body: JSON.stringify({
         color: buildColorString({ hue, saturation, brightness, kelvin }),
+        // from_color is the second color the effect alternates with.
+        // If Claude specified one, use it; otherwise LIFX falls back to the bulb's current state.
+        ...(effect.from_color && { from_color: buildColorString(effect.from_color) }),
         period: effect.period,
         power_on: true,
         // persist: true keeps the last effect color when the effect ends,
