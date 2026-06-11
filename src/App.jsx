@@ -100,10 +100,14 @@ export default function App() {
     send(() => lifx.setPower(next));
   }
 
-  function handleBrightness(value) {
+  // Update the display value instantly while dragging — no API call yet.
+  function handleBrightnessChange(value) {
     setBrightness(value);
     setActiveScene(null);
-    // Convert 0–100 percentage to 0–1 float for the LIFX API.
+  }
+
+  // Only send to LIFX when the user finishes dragging (mouse/touch released).
+  function handleBrightnessCommit(value) {
     send(() => lifx.setBrightness(value / 100));
   }
 
@@ -142,7 +146,8 @@ export default function App() {
         <section className="card">
           <BrightnessSlider
             brightness={brightness}
-            onBrightness={handleBrightness}
+            onBrightness={handleBrightnessChange}
+            onBrightnessCommit={handleBrightnessCommit}
             disabled={isBusy}
           />
         </section>

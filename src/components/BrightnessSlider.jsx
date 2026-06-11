@@ -3,12 +3,13 @@
  *
  * A range slider that controls the brightness of the Game Room lights.
  * Props:
- *   brightness    - number 0–100 (percentage, for display)
- *   onBrightness  - function called with new brightness value (0–100) on change
- *   disabled      - boolean, disables input while a request is in flight
+ *   brightness         - number 0–100 (percentage, for display)
+ *   onBrightness       - called on every drag movement (updates display only)
+ *   onBrightnessCommit - called when the user releases the slider (sends to LIFX)
+ *   disabled           - boolean, disables input while a request is in flight
  */
 
-export default function BrightnessSlider({ brightness, onBrightness, disabled }) {
+export default function BrightnessSlider({ brightness, onBrightness, onBrightnessCommit, disabled }) {
   return (
     <div style={styles.container}>
       <div style={styles.header}>
@@ -23,6 +24,8 @@ export default function BrightnessSlider({ brightness, onBrightness, disabled })
         value={brightness}
         disabled={disabled}
         onChange={(e) => onBrightness(Number(e.target.value))}
+        onMouseUp={(e) => onBrightnessCommit(Number(e.target.value))}
+        onTouchEnd={(e) => onBrightnessCommit(Number(e.target.value))}
         style={styles.slider}
       />
 
