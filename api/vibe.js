@@ -1,21 +1,21 @@
 /**
  * Vercel Serverless Function: Vibe → Claude → LIFX
  *
- * This is the AI interpretation layer. It does three things in one request:
+ * This is the AI interpretation layer:
  *   1. Receives a vibe description from the browser
- *   2. Sends it to Claude, which responds with LIFX lighting parameters as JSON
- *   3. Fires those parameters directly to the LIFX API
- *   4. Returns the lighting parameters to the browser so the UI can reflect the state
+ *   2. Sends it to Claude, which returns a colors array + timing as JSON
+ *   3. Sets the first color on the LIFX bulb immediately
+ *   4. Returns the full params to the browser
  *
- * Doing steps 2 and 3 server-side means:
- *   - The Anthropic and LIFX API keys never touch the browser
- *   - One round trip from the browser instead of two
+ * The browser then runs a color cycling loop for multi-color vibes,
+ * the same way Rave mode works. This means Claude can specify any number
+ * of colors, any step rate, and any order — no LIFX effects API limitations.
  *
  * FUTURE (Sprint 3): The `vibe` string input will be replaced by a structured
  * object containing real-time data — audio energy levels and dominant screen
  * colors sampled from the game. The Claude prompt will be updated to interpret
  * that data instead of a typed string. Only the input format changes here;
- * the Claude → LIFX pipeline stays the same.
+ * the rest of the pipeline stays the same.
  */
 
 import Anthropic from '@anthropic-ai/sdk';
@@ -24,119 +24,67 @@ const LIFX_BASE_URL = 'https://api.lifx.com/v1';
 const LIFX_GROUP = 'Game Room';
 const selector = `group:${LIFX_GROUP}`;
 
-// The system prompt that tells Claude how to behave.
-// It instructs Claude to return only valid JSON with LIFX-compatible fields.
 const SYSTEM_PROMPT = `You are a lighting controller for a single smart bulb in a gaming room (LIFX).
 When given a vibe description, respond with ONLY a valid JSON object.
 No explanation. No markdown. No preamble. Just the raw JSON.
 
 The JSON must contain these fields:
 
-  hue         - integer 0–360
-                (0=red, 30=orange, 60=yellow, 120=green,
-                 180=cyan, 240=blue, 280=purple, 320=pink)
-  saturation  - float 0.0–1.0  (0=white/warm, 1=full color)
-  brightness  - float 0.0–1.0
-  kelvin      - integer 2500–9000  (used when saturation is low:
-                2500=candlelight, 4000=neutral, 6500=daylight)
-  duration    - integer milliseconds for the color transition (100–5000)
-  description - string, one short plain-English phrase describing what the light is doing,
-                e.g. "slow deep crimson pulse" or "bright cool blue, no movement".
-                Max 8 words. No punctuation.
-  effect      - (optional) object, only include when movement enhances the vibe:
-    {
-      "type":       "pulse" | "breathe",
-      "period":     float seconds per cycle — minimum 1.0 for intense scenes,
-                    3.0+ for calm scenes,
-      "from_color": (optional) object with hue/saturation/brightness/kelvin —
-                    the second color the effect alternates with. Use this for
-                    high-contrast two-color flashing. If omitted, LIFX uses
-                    the bulb's previous state as the second color.
-    }
-    Effects run indefinitely until the user changes the scene manually. Never include a cycles field.
+  description  - string, one short plain-English phrase describing what the light is doing.
+                 e.g. "rapid red and cyan strobe" or "slow deep crimson throb".
+                 Max 8 words. No punctuation.
 
-Be creative and specific. The light should feel like it belongs in the moment.
+  colors       - array of 1–8 color objects, each with:
+                   hue        integer 0–360 (0=red, 60=yellow, 120=green, 180=cyan, 240=blue, 300=pink)
+                   saturation float 0.0–1.0
+                   brightness float 0.0–1.0
+                   kelvin     integer 2500–9000
+                 For a static scene use 1 color. For cycling use 2–8 colors.
+                 The bulb will step through them in the given order.
 
-Rules for intense or high-energy scenes:
-  - Use high-contrast colors: pick hues that are far apart on the color wheel
-    (at least 120° of separation). Red + orange are neighbors and look identical
-    on a bulb. Red + cyan, or blue + yellow, are contrasting and visually striking.
-  - Pulsing must be discernible: period must be at least 1.0 second so the
-    color change is actually visible. Faster than that blurs into a flicker.
-  - Full saturation (1.0) and high brightness for intense moments.
+  stepDuration - integer milliseconds to spend on each color before transitioning.
+                 This is also the LIFX transition time, so shorter = snappier cut,
+                 longer = smooth fade. No minimum — use your judgment:
+                   intense flash: 100–300ms
+                   energetic cycle: 400–800ms
+                   calm breathing: 2000–5000ms
 
-Rules for calm or atmospheric scenes:
-  - Lower saturation (0.3–0.6) softens the color.
-  - No effect, or a very slow breathe (period 3.0+).
-  - Lower brightness (0.3–0.5) for moody or sad scenes.
+  order        - "sequence" (step through colors in order, looping) or
+                 "random" (pick a random color each step)
 
-Some guidance:
+Be creative. The light should feel like it belongs in the moment.
+
+Rules:
+  - For intense/high-energy scenes: use multiple high-contrast colors (hues far apart
+    on the wheel — red + cyan, blue + yellow, etc.). Fast stepDuration.
+  - For calm/atmospheric scenes: 1–2 colors, low saturation, slow stepDuration or static.
+  - For horror/dread: very low brightness, slow movement or static.
+  - Full saturation and brightness for vivid, energetic moments.
+
+Examples:
+
+  "intense boss fight"
+    → 4–6 colors cycling fast: red, cyan, yellow, blue — all full brightness,
+      stepDuration 200–400ms, order sequence
 
   "horror, something's behind me"
-    → deep blood crimson (hue 0), brightness 0.15, slow breathe period 3.0 — pure dread
-  "intense boss fight"
-    → use effect with from_color to flash between two contrasting hues
-      (e.g. color hue 0 red ↔ from_color hue 180 cyan, or hue 240 blue ↔ hue 60 yellow),
-      full brightness on both, pulse period 1.0–1.5
-  "chill lofi studying"
-    → desaturated blue (hue 220, saturation 0.4), brightness 0.5, no effect
-  "victory / win"
-    → warm gold (hue 45, saturation 0.9), high brightness, breathe period 1.5
+    → 1–2 colors: deep crimson and near-black, brightness 0.1–0.2,
+      stepDuration 3000ms, order sequence — slow dread
+
+  "victory"
+    → gold, white, gold, yellow cycling, brightness 1.0, stepDuration 600ms
+
+  "chill lofi"
+    → 1 color: desaturated blue-purple, brightness 0.4, static (stepDuration irrelevant)
+
   "underwater level"
-    → deep teal (hue 185, saturation 0.8), brightness 0.5, slow breathe period 3.0
-  "sad ending cutscene"
-    → cold blue (hue 220, saturation 0.5), brightness 0.2, no effect
+    → 2–3 colors: teal, deep blue, cyan, brightness 0.5, stepDuration 2000ms
 
 Only return the JSON. No other text.`;
 
-// Builds the LIFX color string from the Claude response fields.
+// Builds the LIFX color string from a color object.
 function buildColorString({ hue, saturation, brightness, kelvin }) {
   return `hue:${hue} saturation:${saturation} brightness:${brightness} kelvin:${kelvin}`;
-}
-
-// Sends a state update (no effect) to LIFX.
-async function setLifxState(params) {
-  const { hue, saturation, brightness, kelvin, duration } = params;
-  const response = await fetch(`${LIFX_BASE_URL}/lights/${selector}/state`, {
-    method: 'PUT',
-    headers: {
-      Authorization: `Bearer ${process.env.LIFX_API_TOKEN}`,
-      'Content-Type': 'application/json',
-    },
-    body: JSON.stringify({
-      color: buildColorString({ hue, saturation, brightness, kelvin }),
-      // LIFX state endpoint takes duration in seconds, not milliseconds.
-      duration: duration / 1000,
-    }),
-  });
-  return response.ok;
-}
-
-// Fires a pulse or breathe effect to LIFX.
-async function setLifxEffect(params) {
-  const { hue, saturation, brightness, kelvin, effect } = params;
-  const response = await fetch(
-    `${LIFX_BASE_URL}/lights/${selector}/effects/${effect.type}`,
-    {
-      method: 'POST',
-      headers: {
-        Authorization: `Bearer ${process.env.LIFX_API_TOKEN}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({
-        color: buildColorString({ hue, saturation, brightness, kelvin }),
-        // from_color is the second color the effect alternates with.
-        // If Claude specified one, use it; otherwise LIFX falls back to the bulb's current state.
-        ...(effect.from_color && { from_color: buildColorString(effect.from_color) }),
-        period: effect.period,
-        power_on: true,
-        // persist: true keeps the last effect color when the effect ends,
-        // instead of snapping back to the previous state (usually bright white).
-        persist: true,
-      }),
-    }
-  );
-  return response.ok;
 }
 
 export default async function handler(req, res) {
@@ -145,47 +93,55 @@ export default async function handler(req, res) {
   }
 
   const { vibe } = req.body;
-
   if (!vibe || typeof vibe !== 'string' || vibe.trim() === '') {
     return res.status(400).json({ error: 'Missing vibe description' });
   }
 
-  // ── Step 1: Ask Claude for lighting parameters ────────────────────────────
   if (!process.env.ANTHROPIC_API_KEY) {
     return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set in environment variables' });
   }
 
+  // ── Step 1: Ask Claude for lighting parameters ────────────────────────────
   let lightingParams;
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
-
     const message = await anthropic.messages.create({
-      model: 'claude-haiku-4-5-20251001', // Fast and cheap — perfect for real-time lighting
-      max_tokens: 256,
+      model: 'claude-haiku-4-5-20251001',
+      max_tokens: 512,
       system: SYSTEM_PROMPT,
       messages: [{ role: 'user', content: vibe.trim() }],
     });
 
     // Strip markdown code fences if Claude wrapped the JSON in ```json ... ```
-    const rawJson = message.content[0].text.trim().replace(/^```[a-z]*\n?/i, '').replace(/```$/,'').trim();
+    const rawJson = message.content[0].text.trim()
+      .replace(/^```[a-z]*\n?/i, '').replace(/```$/, '').trim();
     lightingParams = JSON.parse(rawJson);
   } catch (err) {
     console.error('Claude error:', err.message || err);
     return res.status(500).json({ error: `Claude error: ${err.message || 'unknown'}` });
   }
 
-  // ── Step 2: Fire the lighting command to LIFX ─────────────────────────────
+  // ── Step 2: Set the first color on the bulb immediately ──────────────────
+  // The browser will take over cycling through the remaining colors.
   try {
-    if (lightingParams.effect) {
-      await setLifxEffect(lightingParams);
-    } else {
-      await setLifxState(lightingParams);
-    }
+    const firstColor = lightingParams.colors[0];
+    await fetch(`${LIFX_BASE_URL}/lights/${selector}/state`, {
+      method: 'PUT',
+      headers: {
+        Authorization: `Bearer ${process.env.LIFX_API_TOKEN}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        color: buildColorString(firstColor),
+        // stepDuration is in ms; LIFX state endpoint takes seconds.
+        duration: lightingParams.stepDuration / 1000,
+      }),
+    });
   } catch (err) {
     console.error('LIFX error:', err);
     return res.status(500).json({ error: 'Claude responded but LIFX call failed' });
   }
 
-  // ── Step 3: Return the params so the UI can reflect the new state ─────────
+  // ── Step 3: Return full params so the browser can run the color loop ──────
   return res.status(200).json(lightingParams);
 }

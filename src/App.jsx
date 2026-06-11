@@ -97,11 +97,13 @@ export default function App() {
   const [vibeHistory, setVibeHistory] = useState([]); // Most recent first, max 5.
   const [vibeDescription, setVibeDescription] = useState(''); // What Claude is doing.
 
-  // ── Rave loop refs ────────────────────────────────────────────────────────
-  // We use a ref (not state) for the interval ID because changing it should
-  // never trigger a re-render — it's internal bookkeeping, not UI data.
+  // ── Color loop refs ───────────────────────────────────────────────────────
+  // We use refs (not state) for interval IDs — changing them should never
+  // trigger a re-render, they're internal bookkeeping only.
   const raveIntervalRef = useRef(null);
   const raveColorIndexRef = useRef(0);
+  const vibeIntervalRef = useRef(null);   // Loop for AI-generated multi-color vibes.
+  const vibeColorIndexRef = useRef(0);
 
   // ── Helpers ───────────────────────────────────────────────────────────────
 
@@ -148,9 +150,36 @@ export default function App() {
     }, speed * 1000);
   }
 
-  // Stop the rave loop when the component unmounts (e.g. tab closed).
+  // Stops the vibe color loop if it's running.
+  function stopVibeLoop() {
+    if (vibeIntervalRef.current) {
+      clearInterval(vibeIntervalRef.current);
+      vibeIntervalRef.current = null;
+    }
+  }
+
+  // Starts a color cycling loop from Claude's response.
+  // lifxColors: array of LIFX color objects. stepDuration: ms per step. order: 'sequence'|'random'.
+  function startVibeLoop(lifxColors, stepDuration, order) {
+    stopVibeLoop();
+    if (lifxColors.length <= 1) return; // Single color was already set server-side.
+
+    vibeColorIndexRef.current = 0;
+    const durationSec = stepDuration / 1000;
+
+    vibeIntervalRef.current = setInterval(() => {
+      if (order === 'random') {
+        vibeColorIndexRef.current = Math.floor(Math.random() * lifxColors.length);
+      } else {
+        vibeColorIndexRef.current = (vibeColorIndexRef.current + 1) % lifxColors.length;
+      }
+      lifx.setColor(lifxColors[vibeColorIndexRef.current], durationSec).catch(() => {});
+    }, stepDuration);
+  }
+
+  // Stop all loops when the component unmounts (e.g. tab closed).
   useEffect(() => {
-    return () => stopRave();
+    return () => { stopRave(); stopVibeLoop(); };
   }, []);
 
   // ── Check connection on first load ────────────────────────────────────────
@@ -174,6 +203,7 @@ export default function App() {
     setIsOn(next);
     setActiveScene(null);
     stopRave();
+    stopVibeLoop();
     send(() => lifx.setPower(next));
   }
 
@@ -182,6 +212,7 @@ export default function App() {
     setBrightness(value);
     setActiveScene(null);
     stopRave();
+    stopVibeLoop();
   }
 
   // Only send to LIFX when the user finishes dragging (mouse/touch released).
@@ -193,12 +224,14 @@ export default function App() {
     setColor(hex);
     setActiveScene(null);
     stopRave();
+    stopVibeLoop();
     send(() => lifx.setColor(hexToLifxColor(hex)));
   }
 
   function handleScene(key) {
     setActiveScene(key);
     setIsOn(true);
+    stopVibeLoop();
 
     if (key === 'rave') {
       startRave(fadeSpeed, raveColors);
@@ -223,11 +256,12 @@ export default function App() {
     }
   }
 
-  // Sends a vibe string to the /api/vibe endpoint and updates UI state.
+  // Sends a vibe string to /api/vibe, then starts the color loop if needed.
   async function handleVibe(vibe) {
     setIsVibeLoading(true);
     setActiveScene(null);
     stopRave();
+    stopVibeLoop();
     setStatusMessage('');
 
     try {
@@ -238,12 +272,15 @@ export default function App() {
       });
 
       const data = await response.json();
+      if (!response.ok) throw new Error(data.error || 'Vibe request failed');
 
-      if (!response.ok) {
-        throw new Error(data.error || 'Vibe request failed');
+      // Start the multi-color loop if Claude returned more than one color.
+      if (data.colors && data.colors.length > 1) {
+        startVibeLoop(data.colors, data.stepDuration, data.order || 'sequence');
       }
 
-      setBrightness(Math.round(data.brightness * 100));
+      // Sync brightness display to the first color Claude chose.
+      setBrightness(Math.round(data.colors[0].brightness * 100));
       setVibeDescription(data.description || '');
       setStatus('connected');
 
