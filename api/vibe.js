@@ -44,9 +44,9 @@ The JSON must contain these fields:
 
   stepDuration - integer milliseconds to spend on each color before transitioning.
                  This is also the LIFX transition time, so shorter = snappier cut,
-                 longer = smooth fade. No minimum — use your judgment:
-                   intense flash: 100–300ms
-                   energetic cycle: 400–800ms
+                 longer = smooth fade. Minimum 500ms (hardware rate limit).
+                   intense flash: 500–800ms
+                   energetic cycle: 800–1500ms
                    calm breathing: 2000–5000ms
 
   order        - "sequence" (step through colors in order, looping) or
@@ -65,7 +65,7 @@ Examples:
 
   "intense boss fight"
     → 4–6 colors cycling fast: red, cyan, yellow, blue — all full brightness,
-      stepDuration 200–400ms, order sequence
+      stepDuration 500–700ms, order sequence
 
   "horror, something's behind me"
     → 1–2 colors: deep crimson and near-black, brightness 0.1–0.2,

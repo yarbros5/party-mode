@@ -97,6 +97,9 @@ export default function App() {
   const [vibeHistory, setVibeHistory] = useState([]); // Most recent first, max 5.
   const [vibeDescription, setVibeDescription] = useState(''); // What Claude is doing.
 
+  // LIFX cloud API allows 120 requests/minute = one every 500ms.
+  const LIFX_MIN_STEP_MS = 500;
+
   // ── Color loop refs ───────────────────────────────────────────────────────
   // We use refs (not state) for interval IDs — changing them should never
   // trigger a re-render, they're internal bookkeeping only.
@@ -138,16 +141,17 @@ export default function App() {
     stopRave(); // Clear any existing loop first.
     raveColorIndexRef.current = 0;
     const lifxColors = hexColors.map(hex => hexToLifxColor(hex));
+    // Enforce LIFX rate limit: no faster than one request per 500ms.
+    const clampedSpeed = Math.max(speed, LIFX_MIN_STEP_MS / 1000);
 
     // Fire the first color immediately so there's no delay on activation.
-    lifx.setColor(lifxColors[0], speed).catch(() => {});
+    lifx.setColor(lifxColors[0], clampedSpeed).catch(() => {});
 
     raveIntervalRef.current = setInterval(() => {
       raveColorIndexRef.current = (raveColorIndexRef.current + 1) % lifxColors.length;
       const nextColor = lifxColors[raveColorIndexRef.current];
-      // Duration matches the interval so each fade fills exactly one step.
-      lifx.setColor(nextColor, speed).catch(() => {});
-    }, speed * 1000);
+      lifx.setColor(nextColor, clampedSpeed).catch(() => {});
+    }, clampedSpeed * 1000);
   }
 
   // Stops the vibe color loop if it's running.
@@ -165,7 +169,8 @@ export default function App() {
     if (lifxColors.length <= 1) return; // Single color was already set server-side.
 
     vibeColorIndexRef.current = 0;
-    const durationSec = stepDuration / 1000;
+    const clampedStep = Math.max(stepDuration, LIFX_MIN_STEP_MS);
+    const durationSec = clampedStep / 1000;
 
     vibeIntervalRef.current = setInterval(() => {
       if (order === 'random') {
@@ -174,7 +179,7 @@ export default function App() {
         vibeColorIndexRef.current = (vibeColorIndexRef.current + 1) % lifxColors.length;
       }
       lifx.setColor(lifxColors[vibeColorIndexRef.current], durationSec).catch(() => {});
-    }, stepDuration);
+    }, clampedStep);
   }
 
   // Stop all loops when the component unmounts (e.g. tab closed).
