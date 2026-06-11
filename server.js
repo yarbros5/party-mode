@@ -61,6 +61,9 @@ The JSON must contain these fields:
   kelvin      - integer 2500–9000  (used when saturation is low:
                 2500=candlelight, 4000=neutral, 6500=daylight)
   duration    - integer milliseconds for the color transition (100–5000)
+  description - string, one short plain-English phrase describing what the light is doing,
+                e.g. "slow deep crimson pulse" or "bright cool blue, no movement".
+                Max 8 words. No punctuation.
   effect      - (optional) object, only include when movement enhances the vibe:
     {
       "type":    "pulse" | "breathe",

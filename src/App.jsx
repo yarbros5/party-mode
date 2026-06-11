@@ -95,6 +95,7 @@ export default function App() {
   // ── Vibe state ────────────────────────────────────────────────────────────
   const [isVibeLoading, setIsVibeLoading] = useState(false);
   const [vibeHistory, setVibeHistory] = useState([]); // Most recent first, max 5.
+  const [vibeDescription, setVibeDescription] = useState(''); // What Claude is doing.
 
   // ── Rave loop refs ────────────────────────────────────────────────────────
   // We use a ref (not state) for the interval ID because changing it should
@@ -242,8 +243,8 @@ export default function App() {
         throw new Error(data.error || 'Vibe request failed');
       }
 
-      // Sync brightness slider to what Claude chose (convert 0–1 to 0–100).
       setBrightness(Math.round(data.brightness * 100));
+      setVibeDescription(data.description || '');
       setStatus('connected');
 
       // Add to history, keeping only the last 5, avoiding duplicates.
@@ -283,7 +284,7 @@ export default function App() {
       <main className="controls">
         {/* ── AI Vibe Layer ── */}
         <section className="card">
-          <VibeInput onVibe={handleVibe} isLoading={isVibeLoading} />
+          <VibeInput onVibe={handleVibe} isLoading={isVibeLoading} description={vibeDescription} />
           <VibeHistory
             history={vibeHistory}
             onVibe={handleVibe}

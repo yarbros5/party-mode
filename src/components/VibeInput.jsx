@@ -12,7 +12,7 @@
 
 import { useState } from 'react';
 
-export default function VibeInput({ onVibe, isLoading }) {
+export default function VibeInput({ onVibe, isLoading, description }) {
   const [value, setValue] = useState('');
 
   function handleSubmit(e) {
@@ -61,6 +61,13 @@ export default function VibeInput({ onVibe, isLoading }) {
           {isLoading ? '...' : '→'}
         </button>
       </form>
+
+      {/* Show what Claude decided to do, once a vibe has been set */}
+      {(isLoading || description) && (
+        <div style={styles.description}>
+          {isLoading ? '✦ Interpreting vibe...' : `✦ ${description}`}
+        </div>
+      )}
     </div>
   );
 }
@@ -116,6 +123,12 @@ const styles = {
     cursor: 'pointer',
     lineHeight: 1,
     padding: '0 2px',
+  },
+  description: {
+    color: '#a78bfa',
+    fontSize: '13px',
+    fontStyle: 'italic',
+    marginTop: '2px',
   },
   submitButton: {
     background: 'linear-gradient(135deg, #7c3aed, #4f46e5)',
