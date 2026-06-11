@@ -125,6 +125,10 @@ export default async function handler(req, res) {
   }
 
   // ── Step 1: Ask Claude for lighting parameters ────────────────────────────
+  if (!process.env.ANTHROPIC_API_KEY) {
+    return res.status(500).json({ error: 'ANTHROPIC_API_KEY is not set in environment variables' });
+  }
+
   let lightingParams;
   try {
     const anthropic = new Anthropic({ apiKey: process.env.ANTHROPIC_API_KEY });
@@ -139,8 +143,8 @@ export default async function handler(req, res) {
     const rawJson = message.content[0].text.trim();
     lightingParams = JSON.parse(rawJson);
   } catch (err) {
-    console.error('Claude error:', err);
-    return res.status(500).json({ error: 'Failed to interpret vibe — Claude error' });
+    console.error('Claude error:', err.message || err);
+    return res.status(500).json({ error: `Claude error: ${err.message || 'unknown'}` });
   }
 
   // ── Step 2: Fire the lighting command to LIFX ─────────────────────────────
